@@ -16,6 +16,7 @@ from tqdm import tqdm
 from causaldynamics.baselines import (
     DYNOTEARS,
     FPCMCI,
+    Kausal,
     NGC_LSTM,
     TSCI,
     CUTSPlus,
@@ -38,6 +39,7 @@ CAUSAL_MODELS = [
     "fpcmci",
     "varlingam",
     "dynotears",
+    "kausal",
     "ngc_lstm",
     "tsci",
     "cutsplus",
@@ -221,6 +223,7 @@ def evaluate(*, data_dir: str):
 
     # Initialize causal model
     causal_models = {
+        "kausal": Kausal(),
         "pcmciplus": PCMCIPlus(),
         "fpcmci": FPCMCI(),
         "varlingam": VARLiNGAM(),
@@ -293,8 +296,10 @@ def evaluate(*, data_dir: str):
                     model.run(X=x)
                     est_adj_matrix.append(copy.deepcopy(model.adj_matrix))
 
-                except:
-                    logger.info(f"Fails for a trajectory in {dyn_system}...")
+                except Exception as exc:
+                    logger.exception(
+                        f"Fails for a trajectory in {dyn_system} with model {causal_model}: {exc}"
+                    )
                     est_adj_matrix.append(np.zeros_like(adj_matrix))
 
                 finally:

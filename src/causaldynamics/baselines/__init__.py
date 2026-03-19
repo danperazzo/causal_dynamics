@@ -5,5 +5,6 @@ from .neuralgc import NGC_LSTM
 from .pcmci import FPCMCI, PCMCIPlus
 from .varlingam import VARLiNGAM, RCD
 from .gin import GIN
+from .kausal import Kausal
 from .perm import GRASP
 from .tcdf import TCDF
