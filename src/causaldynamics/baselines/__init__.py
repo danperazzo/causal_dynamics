@@ -6,6 +6,7 @@ from .pcmci import FPCMCI, PCMCIPlus
 from .varlingam import VARLiNGAM, RCD
 from .gin import GIN
 from .kausal import Kausal
+from .kausal_encoderops import KausalEncoderops
 from .perm import GRASP
 from .tcdf import TCDF
 from .gc_xlstm import GC_xLSTM

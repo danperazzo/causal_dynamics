@@ -18,6 +18,7 @@ from causaldynamics.baselines import (
     FPCMCI,
     GC_xLSTM,
     Kausal,
+    KausalEncoderops,
     NGC_LSTM,
     TSCI,
     CUTSPlus,
@@ -41,6 +42,7 @@ CAUSAL_MODELS = [
     "varlingam",
     "dynotears",
     "kausal",
+    "kausal_encoderops",
     "ngc_lstm",
     "gc_xlstm",
     "tsci",
@@ -226,6 +228,7 @@ def evaluate(*, data_dir: str, causal_model: str | None = None):
     # Initialize causal model
     causal_models = {
         "kausal": Kausal(),
+        "kausal_encoderops": KausalEncoderops(),
         "pcmciplus": PCMCIPlus(),
         "fpcmci": FPCMCI(),
         "varlingam": VARLiNGAM(),
