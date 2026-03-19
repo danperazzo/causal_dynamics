@@ -16,6 +16,7 @@ from tqdm import tqdm
 from causaldynamics.baselines import (
     DYNOTEARS,
     FPCMCI,
+    GC_xLSTM,
     Kausal,
     NGC_LSTM,
     TSCI,
@@ -41,6 +42,7 @@ CAUSAL_MODELS = [
     "dynotears",
     "kausal",
     "ngc_lstm",
+    "gc_xlstm",
     "tsci",
     "cutsplus",
     "rcd",
@@ -187,7 +189,7 @@ def _save_runtime_plot(runtime_df: pd.DataFrame, save_path: Path):
     plt.close(fig)
 
 
-def evaluate(*, data_dir: str):
+def evaluate(*, data_dir: str, causal_model: str | None = None):
     """
     Evaluate causal discovery methods on time series data.
 
@@ -229,17 +231,30 @@ def evaluate(*, data_dir: str):
         "varlingam": VARLiNGAM(),
         "dynotears": DYNOTEARS(),
         "ngc_lstm": NGC_LSTM(),
+        "gc_xlstm": GC_xLSTM(),
         "tsci": TSCI(),
         "cutsplus": CUTSPlus(),
         "rcd": RCD(),
         "grasp": GRASP(),
         "tcdf": TCDF()
     }
+
+    if causal_model is not None:
+        causal_model = causal_model.lower()
+        if causal_model not in causal_models:
+            available = ", ".join(sorted(causal_models.keys()))
+            raise ValueError(
+                f"Unsupported causal_model '{causal_model}'. Available: {available}"
+            )
+        causal_models = {causal_model: causal_models[causal_model]}
+
     print("Initialized causal models: ", list(causal_models.keys()))
     runtime_by_model = {model_name: [] for model_name in causal_models.keys()}
 
     # Run summary graph inference
     for causal_model, _ in causal_models.items():
+        model = causal_models.get(causal_model)
+        model_unavailable_error = None
         EVAL_DIR = Path(data_dir) / "eval" / causal_model
         GRAPH_DIR = EVAL_DIR / "graphs"
         GRAPH_DIR.mkdir(parents=True, exist_ok=True)
@@ -289,12 +304,23 @@ def evaluate(*, data_dir: str):
             est_adj_matrix = []
             system_runtimes = []
             for x in tqdm(timeseries):
-                model = causal_models.get(causal_model)
                 start_time = time.perf_counter()
 
                 try:
+                    if model_unavailable_error is not None:
+                        est_adj_matrix.append(np.zeros_like(adj_matrix))
+                        continue
+
                     model.run(X=x)
                     est_adj_matrix.append(copy.deepcopy(model.adj_matrix))
+
+                except (ImportError, ModuleNotFoundError) as exc:
+                    if model_unavailable_error is None:
+                        model_unavailable_error = exc
+                        logger.exception(
+                            f"Model {causal_model} unavailable due to dependency/import issue: {exc}"
+                        )
+                    est_adj_matrix.append(np.zeros_like(adj_matrix))
 
                 except Exception as exc:
                     logger.exception(
@@ -417,6 +443,14 @@ if __name__ == "__main__":
     parser.add_argument(
         "--data_dir",
         help="Directory containing the time series data and adjacency matrices in a netCDF file",
+    )
+    parser.add_argument(
+        "--causal_model",
+        default=None,
+        help=(
+            "Optional single baseline to run (e.g. 'gc_xlstm'). "
+            "If omitted, all baselines are evaluated."
+        ),
     )
     args = parser.parse_args()
     evaluate(**vars(args))

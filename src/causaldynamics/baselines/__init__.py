@@ -8,3 +8,4 @@ from .gin import GIN
 from .kausal import Kausal
 from .perm import GRASP
 from .tcdf import TCDF
+from .gc_xlstm import GC_xLSTM
