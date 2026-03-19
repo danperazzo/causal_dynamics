@@ -2,10 +2,15 @@ import sys
 sys.path.append("src")
 
 import copy
+import time
 import warnings
+from pathlib import Path
 
+import matplotlib.pyplot as plt
 import numpy as np
 import xarray as xr
+import pandas as pd
+from matplotlib.patches import Circle, FancyArrowPatch
 from tqdm import tqdm
 
 from causaldynamics.baselines import (
@@ -26,7 +31,6 @@ from causaldynamics.score import score
 
 warnings.filterwarnings("ignore")
 
-from pathlib import Path
 from jsonargparse import ArgumentParser
 
 CAUSAL_MODELS = [
@@ -41,6 +45,144 @@ CAUSAL_MODELS = [
     "grasp",
     "tcdf"
 ]
+
+
+def _binarize_prediction(pred_adj: np.ndarray) -> np.ndarray:
+    """Convert model predictions to a binary adjacency matrix."""
+    pred_adj = np.asarray(pred_adj)
+    if pred_adj.ndim == 3:
+        pred_adj = pred_adj.mean(axis=0)
+    return (pred_adj >= 0.5).astype(int)
+
+
+def _save_graph_comparison(
+    *,
+    gt_adj: np.ndarray,
+    pred_adj: np.ndarray,
+    variable_names: list[str],
+    save_path: Path,
+    title: str,
+):
+    """Save ground-truth and predicted graphs side by side."""
+    gt_adj = np.asarray(gt_adj)
+    pred_adj = _binarize_prediction(pred_adj)
+
+    fig, axes = plt.subplots(1, 2, figsize=(10, 4), constrained_layout=True)
+    for ax, matrix, subtitle in [
+        (axes[0], gt_adj, "Ground Truth"),
+        (axes[1], pred_adj, "Predicted"),
+    ]:
+        _draw_directed_graph(ax=ax, matrix=matrix, variable_names=variable_names)
+        ax.set_title(subtitle)
+
+    fig.suptitle(title)
+    save_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(save_path, dpi=180)
+    plt.close(fig)
+
+
+def _extract_variable_names(input_ds: xr.Dataset, adj_var_name: str, n_vars: int) -> list[str]:
+    """Extract variable names from adjacency matrix coordinates when available."""
+    adj_da = input_ds[adj_var_name]
+    names = None
+
+    if len(adj_da.dims) >= 2:
+        out_dim = adj_da.dims[-1]
+        if out_dim in adj_da.coords:
+            values = adj_da.coords[out_dim].values
+            names = [str(v) for v in values]
+
+    if not names or len(names) != n_vars:
+        names = [f"x{i}" for i in range(n_vars)]
+
+    return names
+
+
+def _draw_directed_graph(ax, matrix: np.ndarray, variable_names: list[str]):
+    """Draw a directed graph with node labels from an adjacency matrix."""
+    n_vars = matrix.shape[0]
+    theta = np.linspace(0, 2 * np.pi, n_vars, endpoint=False)
+    radius = 1.0
+    positions = np.c_[radius * np.cos(theta), radius * np.sin(theta)]
+    node_radius = 0.11 if n_vars <= 10 else 0.08
+
+    ax.set_aspect("equal")
+    ax.axis("off")
+    ax.set_xlim(-1.4, 1.4)
+    ax.set_ylim(-1.4, 1.4)
+
+    # Draw edges first so nodes appear on top.
+    for i in range(n_vars):
+        for j in range(n_vars):
+            if matrix[i, j] == 0:
+                continue
+
+            if i == j:
+                x_pos, y_pos = positions[i]
+                # Self-loop as a prominent curved arrow near the node.
+                loop = FancyArrowPatch(
+                    posA=(x_pos + node_radius * 0.9, y_pos + node_radius * 1.6),
+                    posB=(x_pos - node_radius * 0.4, y_pos + node_radius * 1.45),
+                    connectionstyle="arc3,rad=2.4",
+                    arrowstyle="-|>",
+                    mutation_scale=16,
+                    linewidth=2.0,
+                    color="tab:red",
+                    alpha=0.95,
+                )
+                ax.add_patch(loop)
+                continue
+
+            start = positions[i]
+            end = positions[j]
+            direction = end - start
+            norm = np.linalg.norm(direction)
+            if norm == 0:
+                continue
+
+            unit = direction / norm
+            start_adj = start + unit * node_radius
+            end_adj = end - unit * node_radius
+            edge = FancyArrowPatch(
+                posA=tuple(start_adj),
+                posB=tuple(end_adj),
+                arrowstyle="-|>",
+                mutation_scale=10,
+                linewidth=1.2,
+                color="tab:gray",
+                alpha=0.9,
+            )
+            ax.add_patch(edge)
+
+    # Draw nodes and labels.
+    for idx, (x_pos, y_pos) in enumerate(positions):
+        node = Circle((x_pos, y_pos), node_radius, facecolor="tab:blue", edgecolor="black", alpha=0.9)
+        ax.add_patch(node)
+        ax.text(
+            x_pos,
+            y_pos,
+            variable_names[idx],
+            ha="center",
+            va="center",
+            color="white",
+            fontsize=8,
+            fontweight="bold",
+        )
+
+
+def _save_runtime_plot(runtime_df: pd.DataFrame, save_path: Path):
+    """Save a bar chart of average runtime per algorithm."""
+    fig, ax = plt.subplots(figsize=(10, 4.5), constrained_layout=True)
+    ax.bar(runtime_df["method"], runtime_df["avg_runtime_sec"], color="tab:orange")
+    ax.set_ylabel("Average Runtime (seconds)")
+    ax.set_xlabel("Algorithm")
+    ax.set_title("Average Runtime Per Algorithm")
+    ax.tick_params(axis="x", rotation=35)
+    ax.grid(axis="y", linestyle="--", alpha=0.3)
+
+    save_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(save_path, dpi=180)
+    plt.close(fig)
 
 
 def evaluate(*, data_dir: str):
@@ -75,6 +217,7 @@ def evaluate(*, data_dir: str):
     # Setting up
     DATA_DIR = Path(data_dir) / "data"
     DYN_SYSTEMS = list(DATA_DIR.glob(f"*.nc"))
+    summary_rows = []
 
     # Initialize causal model
     causal_models = {
@@ -89,11 +232,16 @@ def evaluate(*, data_dir: str):
         "grasp": GRASP(),
         "tcdf": TCDF()
     }
+    print("Initialized causal models: ", list(causal_models.keys()))
+    runtime_by_model = {model_name: [] for model_name in causal_models.keys()}
 
     # Run summary graph inference
     for causal_model, _ in causal_models.items():
         EVAL_DIR = Path(data_dir) / "eval" / causal_model
+        GRAPH_DIR = EVAL_DIR / "graphs"
+        GRAPH_DIR.mkdir(parents=True, exist_ok=True)
         EVAL_DIR.mkdir(parents=True, exist_ok=True)
+        print(f"Evaluating {causal_model} on {len(DYN_SYSTEMS)} systems...")
 
         for dyn_system in DYN_SYSTEMS:
 
@@ -117,18 +265,29 @@ def evaluate(*, data_dir: str):
             ## Extract adjacency matrix
             ## NOTE: skip if adjacency matrix are all ones (AUROC is unable to process singular truth value)
             if "adjacency_matrix_summary" in input_ds:
-                adj_matrix = input_ds["adjacency_matrix_summary"].to_numpy()
+                adj_var_name = "adjacency_matrix_summary"
+                adj_matrix = input_ds[adj_var_name].to_numpy()
             else:
-                adj_matrix = input_ds["adjacency_matrix"].to_numpy()
+                adj_var_name = "adjacency_matrix"
+                adj_matrix = input_ds[adj_var_name].to_numpy()
+
+            variable_names = _extract_variable_names(
+                input_ds=input_ds,
+                adj_var_name=adj_var_name,
+                n_vars=adj_matrix.shape[0],
+            )
         
             if np.all(adj_matrix == 1) or np.all(adj_matrix == 0):
+                input_ds.close()
                 continue
 
             ## Infer graph for each trajectory
             ## NOTE: safe run -- assigns zeros for trajectory-level estimated graph if run fails
             est_adj_matrix = []
+            system_runtimes = []
             for x in tqdm(timeseries):
                 model = causal_models.get(causal_model)
+                start_time = time.perf_counter()
 
                 try:
                     model.run(X=x)
@@ -138,24 +297,29 @@ def evaluate(*, data_dir: str):
                     logger.info(f"Fails for a trajectory in {dyn_system}...")
                     est_adj_matrix.append(np.zeros_like(adj_matrix))
 
+                finally:
+                    elapsed = time.perf_counter() - start_time
+                    runtime_by_model[causal_model].append(elapsed)
+                    system_runtimes.append(elapsed)
+
             ## Compute scores
             ### NOTE: safe eval -- assigns zeros for all estimated graph if evaluation fails
             try:
-                est_score = score(
-                    preds=np.array(est_adj_matrix), labs=adj_matrix, name=model
+                est_score_df = score(
+                    preds=np.array(est_adj_matrix), labs=adj_matrix, name=causal_model
                 )
 
             except:
-                est_score = score(
+                est_score_df = score(
                     preds=np.zeros(
                         (timeseries.shape[0], *adj_matrix.shape), dtype=adj_matrix.dtype
                     ),
                     labs=adj_matrix,
-                    name=model,
+                    name=causal_model,
                 )
 
             ## Save
-            est_score = est_score[[model]].values.squeeze()
+            est_score = est_score_df[causal_model].values.squeeze()
             eval_ds = xr.Dataset(
                 data_vars={
                     "Joint_AUROC": est_score[0],
@@ -170,6 +334,77 @@ def evaluate(*, data_dir: str):
             )
 
             eval_ds.to_netcdf(EVAL_DIR / f"{dyn_system.stem}.nc")
+            _save_graph_comparison(
+                gt_adj=adj_matrix,
+                pred_adj=np.array(est_adj_matrix),
+                variable_names=variable_names,
+                save_path=GRAPH_DIR / f"{dyn_system.stem}.png",
+                title=f"{causal_model} | {dyn_system.stem}",
+            )
+
+            summary_rows.append(
+                {
+                    "method": causal_model,
+                    "system": dyn_system.stem,
+                    "variables": ",".join(variable_names),
+                    "Joint_AUROC": float(est_score[0]),
+                    "Joint_AUPRC": float(est_score[3]),
+                    "Joint_SHD": float(est_score[6]),
+                    "Avg_Runtime_Sec": float(np.mean(system_runtimes)) if system_runtimes else float("nan"),
+                }
+            )
+            input_ds.close()
+
+    if summary_rows:
+        detail_df = pd.DataFrame(summary_rows)
+        summary_df = (
+            detail_df.groupby("method", as_index=False)
+            .agg(
+                num_systems=("system", "nunique"),
+                variables=("variables", lambda s: ";".join(sorted(set(s)))),
+                Joint_AUROC=("Joint_AUROC", "mean"),
+                Joint_AUPRC=("Joint_AUPRC", "mean"),
+                Joint_SHD=("Joint_SHD", "mean"),
+                Avg_Runtime_Sec=("Avg_Runtime_Sec", "mean"),
+            )
+            .sort_values("method")
+        )
+
+        print("\nMethod-level average performance across systems:")
+        print(summary_df[["method", "num_systems", "Joint_AUROC", "Joint_AUPRC", "Joint_SHD", "Avg_Runtime_Sec"]])
+
+        eval_dir = Path(data_dir) / "eval"
+        eval_dir.mkdir(parents=True, exist_ok=True)
+
+        summary_csv = eval_dir / "summary_metrics.csv"
+        summary_df.to_csv(summary_csv, index=False)
+        print(f"Saved aggregated summary CSV to {summary_csv}")
+
+        detail_csv = eval_dir / "summary_metrics_detailed.csv"
+        detail_df.to_csv(detail_csv, index=False)
+        print(f"Saved detailed per-system CSV to {detail_csv}")
+
+    runtime_rows = []
+    for method, durations in runtime_by_model.items():
+        if len(durations) == 0:
+            continue
+        runtime_rows.append(
+            {
+                "method": method,
+                "avg_runtime_sec": float(np.mean(durations)),
+                "std_runtime_sec": float(np.std(durations)),
+                "num_runs": int(len(durations)),
+            }
+        )
+
+    if runtime_rows:
+        runtime_df = pd.DataFrame(runtime_rows).sort_values("avg_runtime_sec")
+        runtime_csv = Path(data_dir) / "eval" / "runtime_summary.csv"
+        runtime_plot = Path(data_dir) / "eval" / "runtime_by_algorithm.png"
+        runtime_df.to_csv(runtime_csv, index=False)
+        _save_runtime_plot(runtime_df=runtime_df, save_path=runtime_plot)
+        print(f"Saved runtime summary CSV to {runtime_csv}")
+        print(f"Saved runtime plot to {runtime_plot}")
 
 
 if __name__ == "__main__":
