@@ -12,14 +12,14 @@ class KausalEncoderops:
 
     def __init__(
         self,
-        lr: float = 3e-4,
-        epochs: int = 1,
-        hidden_channels: list[int] = [8, 16, 8],
-        bootstrap_nums: int = 30,
+        lr: float = 0.001,
+        epochs: int = 5,
+        hidden_channels: list[int] = [8, 8, 8],
+        bootstrap_nums: int = 20,
         bootstrap_ratio: float = 0.9,
-        activation: str = "sigmoid",
-        batch_size: int = 64,
-        whitening_reg: float = 1e-3,
+        activation: str = "relu",
+        batch_size: int = 1024,
+        whitening_reg: float = 0.000004,
     ):
         self.lr = lr
         self.epochs = epochs
