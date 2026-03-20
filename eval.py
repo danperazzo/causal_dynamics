@@ -176,21 +176,6 @@ def _draw_directed_graph(ax, matrix: np.ndarray, variable_names: list[str]):
         )
 
 
-def _save_runtime_plot(runtime_df: pd.DataFrame, save_path: Path):
-    """Save a bar chart of average runtime per algorithm."""
-    fig, ax = plt.subplots(figsize=(10, 4.5), constrained_layout=True)
-    ax.bar(runtime_df["method"], runtime_df["avg_runtime_sec"], color="tab:orange")
-    ax.set_ylabel("Average Runtime (seconds)")
-    ax.set_xlabel("Algorithm")
-    ax.set_title("Average Runtime Per Algorithm")
-    ax.tick_params(axis="x", rotation=35)
-    ax.grid(axis="y", linestyle="--", alpha=0.3)
-
-    save_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(save_path, dpi=180)
-    plt.close(fig)
-
-
 def evaluate(*, data_dir: str, causal_model: str | None = None):
     """
     Evaluate causal discovery methods on time series data.
@@ -242,6 +227,8 @@ def evaluate(*, data_dir: str, causal_model: str | None = None):
         "tcdf": TCDF()
     }
 
+    single_model_mode = causal_model is not None
+
     if causal_model is not None:
         causal_model = causal_model.lower()
         if causal_model not in causal_models:
@@ -252,7 +239,6 @@ def evaluate(*, data_dir: str, causal_model: str | None = None):
         causal_models = {causal_model: causal_models[causal_model]}
 
     print("Initialized causal models: ", list(causal_models.keys()))
-    runtime_by_model = {model_name: [] for model_name in causal_models.keys()}
 
     # Run summary graph inference
     for causal_model, _ in causal_models.items():
@@ -333,7 +319,6 @@ def evaluate(*, data_dir: str, causal_model: str | None = None):
 
                 finally:
                     elapsed = time.perf_counter() - start_time
-                    runtime_by_model[causal_model].append(elapsed)
                     system_runtimes.append(elapsed)
 
             ## Compute scores
@@ -411,35 +396,23 @@ def evaluate(*, data_dir: str, causal_model: str | None = None):
         eval_dir.mkdir(parents=True, exist_ok=True)
 
         summary_csv = eval_dir / "summary_metrics.csv"
-        summary_df.to_csv(summary_csv, index=False)
-        print(f"Saved aggregated summary CSV to {summary_csv}")
-
-        detail_csv = eval_dir / "summary_metrics_detailed.csv"
-        detail_df.to_csv(detail_csv, index=False)
-        print(f"Saved detailed per-system CSV to {detail_csv}")
-
-    runtime_rows = []
-    for method, durations in runtime_by_model.items():
-        if len(durations) == 0:
-            continue
-        runtime_rows.append(
-            {
-                "method": method,
-                "avg_runtime_sec": float(np.mean(durations)),
-                "std_runtime_sec": float(np.std(durations)),
-                "num_runs": int(len(durations)),
-            }
-        )
-
-    if runtime_rows:
-        runtime_df = pd.DataFrame(runtime_rows).sort_values("avg_runtime_sec")
-        runtime_csv = Path(data_dir) / "eval" / "runtime_summary.csv"
-        runtime_plot = Path(data_dir) / "eval" / "runtime_by_algorithm.png"
-        runtime_df.to_csv(runtime_csv, index=False)
-        _save_runtime_plot(runtime_df=runtime_df, save_path=runtime_plot)
-        print(f"Saved runtime summary CSV to {runtime_csv}")
-        print(f"Saved runtime plot to {runtime_plot}")
-
+        if single_model_mode and summary_csv.exists():
+            existing_summary_df = pd.read_csv(summary_csv)
+            methods_to_update = set(summary_df["method"].astype(str))
+            combined_summary_df = pd.concat(
+                [
+                    existing_summary_df[
+                        ~existing_summary_df["method"].astype(str).isin(methods_to_update)
+                    ],
+                    summary_df,
+                ],
+                ignore_index=True,
+            ).sort_values("method")
+            combined_summary_df.to_csv(summary_csv, index=False)
+            print(f"Updated summary CSV with method(s) {sorted(methods_to_update)} at {summary_csv}")
+        else:
+            summary_df.to_csv(summary_csv, index=False)
+            print(f"Saved aggregated summary CSV to {summary_csv}")
 
 if __name__ == "__main__":
     parser = ArgumentParser()
