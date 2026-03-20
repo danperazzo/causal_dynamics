@@ -18,11 +18,15 @@ class KausalEncoderops:
         bootstrap_nums: int = 30,
         bootstrap_ratio: float = 0.9,
         activation: str = "sigmoid",
+        batch_size: int = 64,
+        whitening_reg: float = 1e-3,
     ):
         self.lr = lr
         self.epochs = epochs
         self.bootstrap_nums = bootstrap_nums
         self.bootstrap_ratio = bootstrap_ratio
+        self.batch_size = batch_size
+        self.whitening_reg = whitening_reg
 
         # Encoder-ops feature maps for marginal and joint observables.
         self.graph_model = Graph(
@@ -49,8 +53,8 @@ class KausalEncoderops:
 
         # Graph API expects shape (variables, channels, timesteps).
         X_t = torch.tensor(X.T[:, None, :], dtype=torch.float32)
-        n_train = max(1, int(X_t.shape[-1] * 0.8))
         time_shift = min(100, max(1, X_t.shape[-1] - 1))
+        n_train = int(X_t.shape[-1] * 0.8)
 
         self.graph_model.infer(
             X=X_t,
@@ -59,7 +63,8 @@ class KausalEncoderops:
                 "n_train": n_train,
                 "epochs": self.epochs,
                 "lr": self.lr,
-                "batch_size": n_train,
+                "batch_size": self.batch_size,
+                "whitening_reg": self.whitening_reg,
             },
             bootstrap_kwargs={
                 "bootstrap_ratio": self.bootstrap_ratio,
