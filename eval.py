@@ -212,8 +212,8 @@ def evaluate(*, data_dir: str, causal_model: str | None = None):
 
     # Initialize causal model
     causal_models = {
-        "kausal": Kausal(),
         "kausal_encoderops": KausalEncoderops(),
+        "kausal": Kausal(),
         "pcmciplus": PCMCIPlus(),
         "fpcmci": FPCMCI(),
         "varlingam": VARLiNGAM(),
