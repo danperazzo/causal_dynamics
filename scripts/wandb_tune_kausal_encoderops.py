@@ -2,7 +2,9 @@ import sys
 
 sys.path.append("src")
 
+import contextlib
 import copy
+import io
 import time
 import warnings
 from pathlib import Path
@@ -47,7 +49,7 @@ DEFAULT_SWEEP_CONFIG = {
                 "128-128-64",
             ]
         },
-        "batch_size": {"values": [32, 64, 128, 256, 512, 1024]},
+        "batch_size": {"values": [ 128, 256, 512, 1024]},
     },
 }
 
@@ -99,7 +101,11 @@ def _evaluate_kausal_encoderops(
 
     per_system_rows = []
 
-    for system_path in systems:
+    systems_iterator = systems
+    if not show_progress:
+        systems_iterator = tqdm(systems, desc="Processing systems", leave=True)
+
+    for system_path in systems_iterator:
         timeseries, adj_matrix = _load_dataset(system_path)
         if timeseries is None:
             continue
@@ -127,13 +133,19 @@ def _evaluate_kausal_encoderops(
 
         preds_array = np.array(preds)
         try:
-            score_df = score(preds_array, adj_matrix, name="kausal_encoderops")
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(
+                io.StringIO()
+            ):
+                score_df = score(preds_array, adj_matrix, name="kausal_encoderops")
         except Exception:
-            score_df = score(
-                np.zeros((preds_array.shape[0], *adj_matrix.shape), dtype=adj_matrix.dtype),
-                adj_matrix,
-                name="kausal_encoderops",
-            )
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(
+                io.StringIO()
+            ):
+                score_df = score(
+                    np.zeros((preds_array.shape[0], *adj_matrix.shape), dtype=adj_matrix.dtype),
+                    adj_matrix,
+                    name="kausal_encoderops",
+                )
         metrics = score_df["kausal_encoderops"]
 
         per_system_rows.append(
