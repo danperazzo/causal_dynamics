@@ -338,16 +338,17 @@ def evaluate(*, data_dir: str, causal_model: str | None = None):
                 )
 
             ## Save
-            est_score = est_score_df[causal_model].values.squeeze()
+            est_metrics = est_score_df[causal_model]
             eval_ds = xr.Dataset(
                 data_vars={
-                    "Joint_AUROC": est_score[0],
-                    "Individual_AUROC": est_score[1],
-                    "Null_AUROC": est_score[2],
-                    "Joint_AUPRC": est_score[3],
-                    "Individual_AUPRC": est_score[4],
-                    "Null_AUPRC": est_score[5],
-                    "Joint_SHD": est_score[6]
+                    "Joint_AUROC": float(est_metrics["Joint AUROC"]),
+                    "Individual_AUROC": float(est_metrics["Individual AUROC"]),
+                    "Null_AUROC": float(est_metrics["Null AUROC"]),
+                    "Joint_AUPRC": float(est_metrics["Joint AUPRC"]),
+                    "Individual_AUPRC": float(est_metrics["Individual AUPRC"]),
+                    "Null_AUPRC": float(est_metrics["Null AUPRC"]),
+                    "Joint_SHD": float(est_metrics["Joint SHD"]),
+                    "Joint_SHD_NoDiag": float(est_metrics["Joint SHD (No Diagonal)"]),
                 },
                 attrs={"description": f"Causal discovery performance metrics ({model})"},
             )
@@ -366,9 +367,10 @@ def evaluate(*, data_dir: str, causal_model: str | None = None):
                     "method": causal_model,
                     "system": dyn_system.stem,
                     "variables": ",".join(variable_names),
-                    "Joint_AUROC": float(est_score[0]),
-                    "Joint_AUPRC": float(est_score[3]),
-                    "Joint_SHD": float(est_score[6]),
+                    "Joint_AUROC": float(est_metrics["Joint AUROC"]),
+                    "Joint_AUPRC": float(est_metrics["Joint AUPRC"]),
+                    "Joint_SHD": float(est_metrics["Joint SHD"]),
+                    "Joint_SHD_NoDiag": float(est_metrics["Joint SHD (No Diagonal)"]),
                     "Avg_Runtime_Sec": float(np.mean(system_runtimes)) if system_runtimes else float("nan"),
                 }
             )
@@ -384,13 +386,14 @@ def evaluate(*, data_dir: str, causal_model: str | None = None):
                 Joint_AUROC=("Joint_AUROC", "mean"),
                 Joint_AUPRC=("Joint_AUPRC", "mean"),
                 Joint_SHD=("Joint_SHD", "mean"),
+                Joint_SHD_NoDiag=("Joint_SHD_NoDiag", "mean"),
                 Avg_Runtime_Sec=("Avg_Runtime_Sec", "mean"),
             )
             .sort_values("method")
         )
 
         print("\nMethod-level average performance across systems:")
-        print(summary_df[["method", "num_systems", "Joint_AUROC", "Joint_AUPRC", "Joint_SHD", "Avg_Runtime_Sec"]])
+        print(summary_df[["method", "num_systems", "Joint_AUROC", "Joint_AUPRC", "Joint_SHD", "Joint_SHD_NoDiag", "Avg_Runtime_Sec"]])
 
         eval_dir = Path(data_dir) / "eval"
         eval_dir.mkdir(parents=True, exist_ok=True)

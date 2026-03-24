@@ -154,6 +154,7 @@ def _evaluate_kausal_encoderops(
                 "joint_auroc": float(metrics["Joint AUROC"]),
                 "joint_auprc": float(metrics["Joint AUPRC"]),
                 "joint_shd": float(metrics["Joint SHD"]),
+                "joint_shd_no_diag": float(metrics["Joint SHD (No Diagonal)"]),
                 "avg_runtime_sec": float(np.mean(runtimes)) if runtimes else float("nan"),
             }
         )
@@ -169,6 +170,7 @@ def _evaluate_kausal_encoderops(
         "mean_joint_auroc": float(detail_df["joint_auroc"].mean()),
         "mean_joint_auprc": float(detail_df["joint_auprc"].mean()),
         "mean_joint_shd": float(detail_df["joint_shd"].mean()),
+        "mean_joint_shd_no_diag": float(detail_df["joint_shd_no_diag"].mean()),
         "mean_runtime_sec": float(detail_df["avg_runtime_sec"].mean()),
     }
 
@@ -219,6 +221,7 @@ def run_sweep_agent(
         log_payload = {
             **summary,
             "Joint_SHD": float(joint_shd_for_log),
+            "Joint_SHD_NoDiag": float(summary["mean_joint_shd_no_diag"]),
             "hidden_channels": "-".join(map(str, model_kwargs["hidden_channels"])),
             "method": "kausal_encoderops",
         }

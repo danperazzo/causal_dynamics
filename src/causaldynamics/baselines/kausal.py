@@ -43,7 +43,7 @@ class Kausal:
         # is expected to have shape (channels, timesteps).
         X_t = torch.tensor(X.T[:, None, :], dtype=torch.float32)
         n_train = max(1, int(X_t.shape[-1] * 0.8))
-        time_shift = min(100, max(1, X_t.shape[-1] - 1))
+        time_shift = 1
 
         """Estimate lagged adjacency graph"""
         self.graph_model.infer(

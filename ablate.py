@@ -150,7 +150,7 @@ def ablate(*, exp_dir: str, abl_type: str):
                     )
 
                 # Extract metrics
-                vec = df[model_name].values  # [Joint AUROC, Ind AUROC, Null AUROC, Joint AUPRC, ..., Joint SHD]
+                vec = df[model_name].values  # [Joint AUROC, Ind AUROC, Null AUROC, Joint AUPRC, ..., Joint SHD, Joint SHD (No Diagonal)]
                 all_scores.append(vec)
 
             if not all_scores:
@@ -172,6 +172,7 @@ def ablate(*, exp_dir: str, abl_type: str):
                 "Individual_AUPRC": mean_metrics[4],
                 "Null_AUPRC": mean_metrics[5],
                 "Joint_SHD": mean_metrics[6],
+                "Joint_SHD_NoDiag": mean_metrics[7],
             })
 
     # Save

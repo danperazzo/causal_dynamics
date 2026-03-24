@@ -60,7 +60,18 @@ def score(preds, labs, name="Result"):
     null_model_auprc = average_precision_score(labs, np.zeros_like(preds))
 
     #  Joint SHD: total mismatches over the entire flattened batch
-    joint_shd = np.sum(np.abs((preds >= 0.5).astype(int) - labs.astype(int)))
+    preds_binary_3d = (np.array(preds).reshape(N, T, D) >= 0.5).astype(int)
+    labs_binary_3d = np.array(labs).reshape(N, T, D).astype(int)
+    diff_3d = np.abs(preds_binary_3d - labs_binary_3d)
+    joint_shd = np.sum(diff_3d)
+
+    # Joint SHD excluding diagonal entries (only meaningful for square adjacency).
+    if T == D:
+        off_diag_mask = ~np.eye(T, dtype=bool)
+        off_diag_mask = np.broadcast_to(off_diag_mask, (N, T, D))
+        joint_shd_no_diag = np.sum(diff_3d[off_diag_mask])
+    else:
+        joint_shd_no_diag = joint_shd
 
     out = pd.DataFrame(
         [
@@ -70,7 +81,8 @@ def score(preds, labs, name="Result"):
             joint_auprc,
             auprc_ind,
             null_model_auprc,
-            joint_shd
+            joint_shd,
+            joint_shd_no_diag,
         ],
         columns=[name],
         index=[
@@ -80,7 +92,8 @@ def score(preds, labs, name="Result"):
             "Joint AUPRC",
             "Individual AUPRC",
             "Null AUPRC",
-            "Joint SHD"
+            "Joint SHD",
+            "Joint SHD (No Diagonal)",
         ],
     )
     out.index.name = "Metric"
