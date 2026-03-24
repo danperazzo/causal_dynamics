@@ -401,18 +401,34 @@ def evaluate(*, data_dir: str, causal_model: str | None = None):
         summary_csv = eval_dir / "summary_metrics.csv"
         if single_model_mode and summary_csv.exists():
             existing_summary_df = pd.read_csv(summary_csv)
-            methods_to_update = set(summary_df["method"].astype(str))
-            combined_summary_df = pd.concat(
-                [
-                    existing_summary_df[
-                        ~existing_summary_df["method"].astype(str).isin(methods_to_update)
-                    ],
-                    summary_df,
-                ],
-                ignore_index=True,
-            ).sort_values("method")
+
+            # Normalize key types and upsert only the evaluated method rows.
+            existing_summary_df["method"] = existing_summary_df["method"].astype(str)
+            summary_df["method"] = summary_df["method"].astype(str)
+            methods_to_update = set(summary_df["method"])
+
+            existing_indexed = existing_summary_df.set_index("method", drop=False)
+            update_indexed = summary_df.set_index("method", drop=False)
+
+            for method in methods_to_update:
+                if method in existing_indexed.index:
+                    # Replace metric columns for this method while preserving any extra CSV columns.
+                    for col in update_indexed.columns:
+                        existing_indexed.loc[method, col] = update_indexed.loc[method, col]
+                else:
+                    # Method not present yet: append new row.
+                    existing_indexed = pd.concat(
+                        [existing_indexed, update_indexed.loc[[method]]],
+                        axis=0,
+                    )
+
+            combined_summary_df = (
+                existing_indexed.reset_index(drop=True).sort_values("method")
+            )
             combined_summary_df.to_csv(summary_csv, index=False)
-            print(f"Updated summary CSV with method(s) {sorted(methods_to_update)} at {summary_csv}")
+            print(
+                f"Updated summary CSV in-place for method(s) {sorted(methods_to_update)} at {summary_csv}"
+            )
         else:
             summary_df.to_csv(summary_csv, index=False)
             print(f"Saved aggregated summary CSV to {summary_csv}")
